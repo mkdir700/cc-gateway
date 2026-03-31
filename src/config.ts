@@ -29,6 +29,13 @@ export type Config = {
     email: string
   }
   env: Record<string, string | boolean | number>
+  // System prompt environment masking - must be consistent with env above
+  prompt_env: {
+    platform: string        // "darwin" — must match env.platform
+    shell: string           // "zsh"
+    os_version: string      // "Darwin 24.4.0" — uname -sr output
+    working_dir: string     // "/Users/jack/projects" — canonical home path prefix
+  }
   process: {
     constrained_memory: number
     rss_range: [number, number]

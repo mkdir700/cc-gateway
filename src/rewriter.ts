@@ -37,49 +37,102 @@ export function rewriteBody(body: Buffer, path: string, config: Config): Buffer 
  * Key field: metadata.user_id (JSON-stringified object with device_id, account_uuid, session_id)
  */
 function rewriteMessagesBody(body: any, config: Config) {
-  if (!body?.metadata?.user_id) return
-
-  try {
-    const userId = JSON.parse(body.metadata.user_id)
-    userId.device_id = config.identity.device_id
-    // Keep session_id and account_uuid as-is (session_id is per-window, account_uuid is same for all)
-    body.metadata.user_id = JSON.stringify(userId)
-    log('debug', `Rewrote metadata.user_id device_id`)
-  } catch {
-    log('warn', `Failed to parse metadata.user_id`)
+  // Rewrite metadata.user_id
+  if (body?.metadata?.user_id) {
+    try {
+      const userId = JSON.parse(body.metadata.user_id)
+      userId.device_id = config.identity.device_id
+      body.metadata.user_id = JSON.stringify(userId)
+      log('debug', `Rewrote metadata.user_id device_id`)
+    } catch {
+      log('warn', `Failed to parse metadata.user_id`)
+    }
   }
 
-  // Rewrite system prompt billing header if present
+  // Rewrite system prompt: billing header + environment block
   if (Array.isArray(body.system)) {
-    rewriteSystemPromptBilling(body.system, config)
+    for (let i = 0; i < body.system.length; i++) {
+      const item = body.system[i]
+      if (typeof item === 'string') {
+        body.system[i] = rewritePromptText(item, config)
+      } else if (item?.text) {
+        item.text = rewritePromptText(item.text, config)
+      }
+    }
   } else if (typeof body.system === 'string') {
-    body.system = rewriteBillingInText(body.system, config)
+    body.system = rewritePromptText(body.system, config)
   }
-}
 
-/**
- * Rewrite billing header embedded in system prompt array.
- * The billing header is in the format:
- *   x-anthropic-billing-header: cc_version=X.Y.Z.FP; cc_entrypoint=cli;
- */
-function rewriteSystemPromptBilling(systemArray: any[], config: Config) {
-  for (let i = 0; i < systemArray.length; i++) {
-    const item = systemArray[i]
-    if (typeof item === 'string') {
-      systemArray[i] = rewriteBillingInText(item, config)
-    } else if (item?.text) {
-      item.text = rewriteBillingInText(item.text, config)
+  // Rewrite user messages that may contain <system-reminder> with env info
+  if (Array.isArray(body.messages)) {
+    for (const msg of body.messages) {
+      if (typeof msg.content === 'string') {
+        msg.content = rewritePromptText(msg.content, config)
+      } else if (Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if (block?.text) {
+            block.text = rewritePromptText(block.text, config)
+          }
+        }
+      }
     }
   }
 }
 
-function rewriteBillingInText(text: string, config: Config): string {
-  // Normalize the cc_version to use canonical version
-  // Pattern: cc_version=X.Y.Z.FP where FP is 3 hex chars
-  return text.replace(
+/**
+ * Comprehensive text rewriter for system prompt and user messages.
+ * Rewrites:
+ * 1. Billing header (cc_version fingerprint)
+ * 2. <env> block (Platform, Shell, OS Version, Working directory)
+ * 3. Inline environment references (Primary working directory, etc.)
+ * 4. Home directory paths that leak username
+ */
+function rewritePromptText(text: string, config: Config): string {
+  const pe = config.prompt_env
+  if (!pe) return text
+
+  let result = text
+
+  // 1. Billing header fingerprint
+  result = result.replace(
     /cc_version=[\d.]+\.[a-f0-9]{3}/g,
-    `cc_version=${config.env.version}.000`
+    `cc_version=${config.env.version}.000`,
   )
+
+  // 2. <env> block format (older prompt format):
+  //    Platform: linux
+  //    Shell: bash
+  //    OS Version: Linux 6.5.0-xxx
+  //    Working directory: /home/bob/project
+  result = result.replace(
+    /Platform:\s*\S+/g,
+    `Platform: ${pe.platform}`,
+  )
+  result = result.replace(
+    /Shell:\s*\S+/g,
+    `Shell: ${pe.shell}`,
+  )
+  result = result.replace(
+    /OS Version:\s*[^\n<]+/g,
+    `OS Version: ${pe.os_version}`,
+  )
+
+  // 3. Working directory / Primary working directory
+  //    Matches: "Working directory: /any/path" or "Primary working directory: /any/path"
+  result = result.replace(
+    /((?:Primary )?[Ww]orking directory:\s*)\/\S+/g,
+    `$1${pe.working_dir}`,
+  )
+
+  // 4. Home directory paths: /Users/xxx/, /home/xxx/, C:\Users\xxx\
+  //    Replace with canonical home path to prevent username leakage
+  //    Only replace the home prefix, keep the rest of the path
+  result = result.replace(
+    /\/(?:Users|home)\/[^/\s]+\//g,
+    `${pe.working_dir.match(/^\/[^/]+\/[^/]+\//)?.[0] || '/Users/user/'}`,
+  )
+
+  return result
 }
 
 /**
