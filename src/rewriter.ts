@@ -93,13 +93,7 @@ function rewritePromptText(text: string, config: Config): string {
 
   let result = text
 
-  // 1. Billing header fingerprint
-  result = result.replace(
-    /cc_version=[\d.]+\.[a-f0-9]{3}/g,
-    `cc_version=${config.env.version}.${config.env.version_hash || 'a1b'}`,
-  )
-
-  // 2. <env> block format (older prompt format):
+  // 1. <env> block format (older prompt format):
   //    Platform: linux
   //    Shell: bash
   //    OS Version: Linux 6.5.0-xxx
@@ -137,7 +131,7 @@ function rewriteEventBatch(body: any, config: Config) {
 
     // Environment fingerprint - replace entirely with canonical
     if (data.env) {
-      data.env = buildCanonicalEnv(config)
+      data.env = buildCanonicalEnv(data.env, config)
     }
 
     // Process metrics - generate realistic values
@@ -171,8 +165,9 @@ function rewriteGenericIdentity(body: any, config: Config) {
  * Build canonical env object from config.
  * Merges config env values into the expected structure.
  */
-function buildCanonicalEnv(config: Config): Record<string, unknown> {
+function buildCanonicalEnv(original: Record<string, unknown>, config: Config): Record<string, unknown> {
   return {
+    ...original,
     platform: config.env.platform,
     platform_raw: config.env.platform_raw || config.env.platform,
     arch: config.env.arch,
@@ -189,8 +184,6 @@ function buildCanonicalEnv(config: Config): Record<string, unknown> {
     is_github_action: false,
     is_claude_code_action: false,
     is_claude_ai_auth: config.env.is_claude_ai_auth ?? true,
-    version: config.env.version,
-    version_base: config.env.version_base || config.env.version,
     build_time: config.env.build_time,
     deployment_environment: config.env.deployment_environment,
     vcs: config.env.vcs,
@@ -271,7 +264,7 @@ export function rewriteHeaders(
     }
 
     if (lower === 'user-agent') {
-      out[key] = `claude-cli/${config.env.version} (external, cli)`
+      out[key] = v
     } else if (lower === 'x-stainless-os') {
       out[key] = toStainlessOs(config.env.platform)
     } else if (lower === 'x-stainless-arch') {
@@ -279,9 +272,9 @@ export function rewriteHeaders(
     } else if (lower === 'x-stainless-runtime-version') {
       out[key] = String(config.env.node_version)
     } else if (lower === 'x-stainless-package-version') {
-      out[key] = String(config.env.stainless_sdk_version || config.env.version_base || config.env.version)
+      out[key] = v
     } else if (lower === 'x-anthropic-billing-header') {
-      out[key] = v.replace(/cc_version=[\d.]+\.[a-f0-9]{3}/g, `cc_version=${config.env.version}.${config.env.version_hash || 'a1b'}`)
+      out[key] = v
     } else {
       out[key] = v
     }

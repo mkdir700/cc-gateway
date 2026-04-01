@@ -25,10 +25,6 @@ const config: Config = {
     is_running_with_bun: false,
     is_ci: false,
     is_claude_ai_auth: true,
-    version: '2.1.89',
-    version_base: '2.1.89',
-    stainless_sdk_version: '0.74.0',
-    version_hash: 'a1b',
     build_time: '2026-03-20T21:26:18Z',
     deployment_environment: 'unknown-darwin',
     vcs: 'git',
@@ -107,16 +103,15 @@ test('rewrites Platform in system prompt', () => {
   assert.ok(result.system[0].text.includes('OS Version: Darwin 24.4.0'))
 })
 
-test('rewrites billing header fingerprint', () => {
+test('preserves billing header version in system prompt', () => {
   const body = {
-    system: 'cc_version=2.1.89.a1b; cc_entrypoint=cli;',
-    messages: [],
+    system: 'cc_version=2.0.50.xyz; cc_entrypoint=cli;',
+    messages: [{ role: 'user', content: 'abcdefghijklmnopqrstuvwxyz' }],
   }
   const result = JSON.parse(
     rewriteBody(Buffer.from(JSON.stringify(body)), '/v1/messages', config).toString(),
   )
-  assert.ok(result.system.includes('cc_version=2.1.89.a1b'))
-  assert.ok(!result.system.includes('.000'))
+  assert.equal(result.system, 'cc_version=2.0.50.xyz; cc_entrypoint=cli;')
 })
 
 // ============================================================
@@ -170,6 +165,31 @@ test('replaces entire env object with canonical', () => {
   assert.equal(env.terminal, 'iTerm2.app')
   assert.equal(env.is_ci, false, 'is_ci should be forced to false')
   assert.equal(env.deployment_environment, 'unknown-darwin')
+})
+
+test('preserves upstream claude version fields in event env', () => {
+  const body = {
+    events: [{
+      event_type: 'ClaudeCodeInternalEvent',
+      event_data: {
+        device_id: 'x',
+        env: {
+          platform: 'linux',
+          arch: 'x64',
+          version: '2.0.50',
+          version_base: '2.0.50',
+        },
+      },
+    }],
+  }
+  const result = JSON.parse(
+    rewriteBody(Buffer.from(JSON.stringify(body)), '/api/event_logging/batch', config).toString(),
+  )
+  const env = result.events[0].event_data.env
+  assert.equal(env.platform, 'darwin')
+  assert.equal(env.arch, 'arm64')
+  assert.equal(env.version, '2.0.50')
+  assert.equal(env.version_base, '2.0.50')
 })
 
 test('strips baseUrl that leaks gateway address', () => {
@@ -256,12 +276,12 @@ test('rewrites client identity headers to canonical machine profile', () => {
     },
     config,
   )
-  assert.equal(headers['user-agent'], 'claude-cli/2.1.89 (external, cli)')
+  assert.equal(headers['user-agent'], 'claude-cli/2.0.50 (external, cli)')
   assert.equal(headers['x-stainless-os'], 'Darwin')
   assert.equal(headers['x-stainless-arch'], 'arm64')
   assert.equal(headers['x-stainless-runtime-version'], 'v24.3.0')
   assert.equal(headers['x-stainless-package-version'], '0.74.0')
-  assert.equal(headers['x-anthropic-billing-header'], 'cc_version=2.1.89.a1b; cc_entrypoint=cli;')
+  assert.equal(headers['x-anthropic-billing-header'], 'cc_version=2.0.50.a1b; cc_entrypoint=cli;')
   assert.equal(headers['x-app'], 'cli')
 })
 
