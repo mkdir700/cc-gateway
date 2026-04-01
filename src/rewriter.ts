@@ -271,7 +271,7 @@ function randomInRange(min: number, max: number): number {
  */
 export function rewriteHeaders(
   headers: Record<string, string | string[] | undefined>,
-  _config: Config,
+  config: Config,
 ): Record<string, string> {
   const out: Record<string, string> = {}
 
@@ -285,8 +285,31 @@ export function rewriteHeaders(
       continue
     }
 
-    out[key] = v
+    if (lower === 'user-agent') {
+      out[key] = `claude-cli/${config.env.version} (external, cli)`
+    } else if (lower === 'x-stainless-os') {
+      out[key] = toStainlessOs(config.env.platform)
+    } else if (lower === 'x-stainless-arch') {
+      out[key] = String(config.env.arch)
+    } else if (lower === 'x-stainless-runtime-version') {
+      out[key] = String(config.env.node_version)
+    } else if (lower === 'x-stainless-package-version') {
+      out[key] = String(config.env.version_base || config.env.version)
+    } else if (lower === 'x-anthropic-billing-header') {
+      out[key] = v.replace(/cc_version=[\d.]+\.[a-f0-9]{3}/g, `cc_version=${config.env.version}.000`)
+    } else {
+      out[key] = v
+    }
   }
 
   return out
+}
+
+function toStainlessOs(platform: unknown): string {
+  if (platform === 'darwin') return 'Darwin'
+  if (platform === 'win32') return 'Windows'
+  if (typeof platform === 'string' && platform.length > 0) {
+    return platform.charAt(0).toUpperCase() + platform.slice(1)
+  }
+  return 'Unknown'
 }

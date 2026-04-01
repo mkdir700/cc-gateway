@@ -267,21 +267,26 @@ test('generates gateway tokens in sk- prefixed hex format', () => {
   assert.match(token, /^sk-[a-f0-9]{64}$/)
 })
 
-test('preserves User-Agent from official client', () => {
+test('rewrites client identity headers to canonical machine profile', () => {
   const headers = rewriteHeaders(
-    { 'user-agent': 'claude-code/2.0.50 (external, cli)', 'x-app': 'cli' },
+    {
+      'user-agent': 'claude-cli/2.0.50 (external, cli)',
+      'x-stainless-os': 'Linux',
+      'x-stainless-arch': 'x64',
+      'x-stainless-runtime-version': 'v20.0.0',
+      'x-stainless-package-version': '0.74.0',
+      'x-anthropic-billing-header': 'cc_version=2.0.50.a1b; cc_entrypoint=cli;',
+      'x-app': 'cli',
+    },
     config,
   )
-  assert.equal(headers['user-agent'], 'claude-code/2.0.50 (external, cli)')
+  assert.equal(headers['user-agent'], 'claude-cli/2.1.81 (external, cli)')
+  assert.equal(headers['x-stainless-os'], 'Darwin')
+  assert.equal(headers['x-stainless-arch'], 'arm64')
+  assert.equal(headers['x-stainless-runtime-version'], 'v24.3.0')
+  assert.equal(headers['x-stainless-package-version'], '2.1.81')
+  assert.equal(headers['x-anthropic-billing-header'], 'cc_version=2.1.81.000; cc_entrypoint=cli;')
   assert.equal(headers['x-app'], 'cli')
-})
-
-test('preserves billing header from client', () => {
-  const headers = rewriteHeaders(
-    { 'x-anthropic-billing-header': 'cc_version=2.0.50.a1b; cc_entrypoint=cli;' },
-    config,
-  )
-  assert.equal(headers['x-anthropic-billing-header'], 'cc_version=2.0.50.a1b; cc_entrypoint=cli;')
 })
 
 test('strips authorization header (gateway injects its own)', () => {
@@ -348,7 +353,7 @@ test('builds upstream headers with oauth beta and corrected content-length', () 
   assert.equal(headers.authorization, 'Bearer oauth-access-token')
   assert.equal(headers['content-length'], '110921')
   assert.ok(headers['anthropic-beta'].includes('oauth-2025-04-20'))
-  assert.equal(headers['user-agent'], 'claude-cli/2.1.89 (external, cli)')
+  assert.equal(headers['user-agent'], 'claude-cli/2.1.81 (external, cli)')
 })
 
 // ============================================================
