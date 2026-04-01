@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto'
 import type { IncomingMessage } from 'http'
 import type { Config, TokenEntry } from './config.js'
 
@@ -8,6 +9,10 @@ export function initAuth(config: Config) {
   for (const entry of config.auth.tokens) {
     tokenMap.set(entry.token, entry)
   }
+}
+
+export function generateGatewayToken(): string {
+  return `sk-${randomBytes(32).toString('hex')}`
 }
 
 /**

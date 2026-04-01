@@ -1,7 +1,7 @@
 import { rewriteBody, rewriteHeaders } from '../src/rewriter.js'
 import type { Config } from '../src/config.js'
 import { strict as assert } from 'assert'
-import { authenticate, initAuth } from '../src/auth.js'
+import { authenticate, generateGatewayToken, initAuth } from '../src/auth.js'
 
 const config: Config = {
   server: { port: 8443, tls: { cert: '', key: '' } },
@@ -259,6 +259,11 @@ test('accepts raw authorization token for gateway authentication', () => {
     headers: { authorization: 'test-token' },
   } as never)
   assert.equal(clientName, 'test')
+})
+
+test('generates gateway tokens in sk- prefixed hex format', () => {
+  const token = generateGatewayToken()
+  assert.match(token, /^sk-[a-f0-9]{64}$/)
 })
 
 test('rewrites User-Agent to canonical version', () => {
