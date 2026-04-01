@@ -117,21 +117,6 @@ function rewritePromptText(text: string, config: Config): string {
     `OS Version: ${pe.os_version}`,
   )
 
-  // 3. Working directory / Primary working directory
-  //    Matches: "Working directory: /any/path" or "Primary working directory: /any/path"
-  result = result.replace(
-    /((?:Primary )?[Ww]orking directory:\s*)\/\S+/g,
-    `$1${pe.working_dir}`,
-  )
-
-  // 4. Home directory paths: /Users/xxx/, /home/xxx/, C:\Users\xxx\
-  //    Replace with canonical home path to prevent username leakage
-  //    Only replace the home prefix, keep the rest of the path
-  result = result.replace(
-    /\/(?:Users|home)\/[^/\s]+\//g,
-    `${pe.working_dir.match(/^\/[^/]+\/[^/]+\//)?.[0] || '/Users/user/'}`,
-  )
-
   return result
 }
 

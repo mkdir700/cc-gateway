@@ -37,7 +37,6 @@ const config: Config = {
     platform: 'darwin',
     shell: 'zsh',
     os_version: 'Darwin 24.4.0',
-    working_dir: '/Users/jack/projects',
   },
   process: {
     constrained_memory: 34359738368,
@@ -108,18 +107,6 @@ test('rewrites Platform in system prompt', () => {
   assert.ok(result.system[0].text.includes('OS Version: Darwin 24.4.0'))
 })
 
-test('rewrites working directory path', () => {
-  const body = {
-    system: 'Primary working directory: /home/bob/myproject',
-    messages: [],
-  }
-  const result = JSON.parse(
-    rewriteBody(Buffer.from(JSON.stringify(body)), '/v1/messages', config).toString(),
-  )
-  assert.ok(result.system.includes('/Users/jack/projects'), `Got: ${result.system}`)
-  assert.ok(!result.system.includes('/home/bob/'), 'Original path should be replaced')
-})
-
 test('rewrites billing header fingerprint', () => {
   const body = {
     system: 'cc_version=2.1.89.a1b; cc_entrypoint=cli;',
@@ -130,20 +117,6 @@ test('rewrites billing header fingerprint', () => {
   )
   assert.ok(result.system.includes('cc_version=2.1.89.a1b'))
   assert.ok(!result.system.includes('.000'))
-})
-
-test('rewrites home paths in user messages with system-reminder', () => {
-  const body = {
-    system: '',
-    messages: [{
-      role: 'user',
-      content: '<system-reminder>Working directory: /home/alice/code</system-reminder>',
-    }],
-  }
-  const result = JSON.parse(
-    rewriteBody(Buffer.from(JSON.stringify(body)), '/v1/messages', config).toString(),
-  )
-  assert.ok(!result.messages[0].content.includes('/home/alice/'))
 })
 
 // ============================================================
