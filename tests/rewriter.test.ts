@@ -25,8 +25,10 @@ const config: Config = {
     is_running_with_bun: false,
     is_ci: false,
     is_claude_ai_auth: true,
-    version: '2.1.81',
-    version_base: '2.1.81',
+    version: '2.1.89',
+    version_base: '2.1.89',
+    stainless_sdk_version: '0.74.0',
+    version_hash: 'a1b',
     build_time: '2026-03-20T21:26:18Z',
     deployment_environment: 'unknown-darwin',
     vcs: 'git',
@@ -120,14 +122,14 @@ test('rewrites working directory path', () => {
 
 test('rewrites billing header fingerprint', () => {
   const body = {
-    system: 'cc_version=2.1.81.a1b; cc_entrypoint=cli;',
+    system: 'cc_version=2.1.89.a1b; cc_entrypoint=cli;',
     messages: [],
   }
   const result = JSON.parse(
     rewriteBody(Buffer.from(JSON.stringify(body)), '/v1/messages', config).toString(),
   )
-  assert.ok(result.system.includes('cc_version=2.1.81.000'))
-  assert.ok(!result.system.includes('.a1b'))
+  assert.ok(result.system.includes('cc_version=2.1.89.a1b'))
+  assert.ok(!result.system.includes('.000'))
 })
 
 test('rewrites home paths in user messages with system-reminder', () => {
@@ -281,12 +283,12 @@ test('rewrites client identity headers to canonical machine profile', () => {
     },
     config,
   )
-  assert.equal(headers['user-agent'], 'claude-cli/2.1.81 (external, cli)')
+  assert.equal(headers['user-agent'], 'claude-cli/2.1.89 (external, cli)')
   assert.equal(headers['x-stainless-os'], 'Darwin')
   assert.equal(headers['x-stainless-arch'], 'arm64')
   assert.equal(headers['x-stainless-runtime-version'], 'v24.3.0')
-  assert.equal(headers['x-stainless-package-version'], '2.1.81')
-  assert.equal(headers['x-anthropic-billing-header'], 'cc_version=2.1.81.000; cc_entrypoint=cli;')
+  assert.equal(headers['x-stainless-package-version'], '0.74.0')
+  assert.equal(headers['x-anthropic-billing-header'], 'cc_version=2.1.89.a1b; cc_entrypoint=cli;')
   assert.equal(headers['x-app'], 'cli')
 })
 
@@ -354,7 +356,7 @@ test('builds upstream headers with oauth beta and corrected content-length', () 
   assert.equal(headers.authorization, 'Bearer oauth-access-token')
   assert.equal(headers['content-length'], '110921')
   assert.ok(headers['anthropic-beta'].includes('oauth-2025-04-20'))
-  assert.equal(headers['user-agent'], 'claude-cli/2.1.81 (external, cli)')
+  assert.equal(headers['user-agent'], 'claude-cli/2.1.89 (external, cli)')
 })
 
 test('builds diff-only rewrite log entry', () => {

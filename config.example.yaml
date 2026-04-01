@@ -50,8 +50,17 @@ env:
   is_running_with_bun: false
   is_ci: false
   is_claude_ai_auth: true
-  version: "2.1.81"
-  version_base: "2.1.81"
+  version: "2.1.89"
+  version_base: "2.1.89"
+  # x-stainless-package-version header — this is the @anthropic-ai/sdk npm package version,
+  # NOT the CLI version. Find the correct value for your target CLI version:
+  #   npm info @anthropic-ai/sdk@<version-that-claude-code-depends-on> version
+  # Or check node_modules/@anthropic-ai/sdk/package.json on a real Claude Code install.
+  stainless_sdk_version: "0.74.0"
+  # Last 3 hex chars of the git commit hash for this CLI release.
+  # Find it from a real client's x-anthropic-billing-header: cc_version=2.1.81.<hash>
+  # Or leave blank to use "000" (less realistic).
+  version_hash: "000"
   build_time: "2026-03-20T21:26:18Z"
   deployment_environment: unknown-darwin
   vcs: git
