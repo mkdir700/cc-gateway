@@ -267,11 +267,11 @@ function randomInRange(min: number, max: number): number {
 }
 
 /**
- * Rewrite HTTP headers to canonical identity.
+ * Preserve client HTTP headers while removing hop-by-hop and client auth headers.
  */
 export function rewriteHeaders(
   headers: Record<string, string | string[] | undefined>,
-  config: Config,
+  _config: Config,
 ): Record<string, string> {
   const out: Record<string, string> = {}
 
@@ -285,15 +285,7 @@ export function rewriteHeaders(
       continue
     }
 
-    if (lower === 'user-agent') {
-      // Normalize to canonical version
-      out[key] = `claude-code/${config.env.version} (external, cli)`
-    } else if (lower === 'x-anthropic-billing-header') {
-      // Rewrite billing header
-      out[key] = v.replace(/cc_version=[\d.]+\.[a-f0-9]{3}/g, `cc_version=${config.env.version}.000`)
-    } else {
-      out[key] = v
-    }
+    out[key] = v
   }
 
   return out

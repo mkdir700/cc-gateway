@@ -2,6 +2,7 @@ import { rewriteBody, rewriteHeaders } from '../src/rewriter.js'
 import type { Config } from '../src/config.js'
 import { strict as assert } from 'assert'
 import { authenticate, generateGatewayToken, initAuth } from '../src/auth.js'
+import { buildDebugRequestSnapshot } from '../src/proxy.js'
 
 const config: Config = {
   server: { port: 8443, tls: { cert: '', key: '' } },
@@ -266,13 +267,21 @@ test('generates gateway tokens in sk- prefixed hex format', () => {
   assert.match(token, /^sk-[a-f0-9]{64}$/)
 })
 
-test('rewrites User-Agent to canonical version', () => {
+test('preserves User-Agent from official client', () => {
   const headers = rewriteHeaders(
     { 'user-agent': 'claude-code/2.0.50 (external, cli)', 'x-app': 'cli' },
     config,
   )
-  assert.equal(headers['user-agent'], 'claude-code/2.1.81 (external, cli)')
+  assert.equal(headers['user-agent'], 'claude-code/2.0.50 (external, cli)')
   assert.equal(headers['x-app'], 'cli')
+})
+
+test('preserves billing header from client', () => {
+  const headers = rewriteHeaders(
+    { 'x-anthropic-billing-header': 'cc_version=2.0.50.a1b; cc_entrypoint=cli;' },
+    config,
+  )
+  assert.equal(headers['x-anthropic-billing-header'], 'cc_version=2.0.50.a1b; cc_entrypoint=cli;')
 })
 
 test('strips authorization header (gateway injects its own)', () => {
@@ -298,6 +307,28 @@ test('strips x-api-key header', () => {
   )
   assert.equal(headers['x-api-key'], undefined)
   assert.equal(headers['x-app'], 'cli')
+})
+
+test('builds redacted debug request snapshot', () => {
+  const snapshot = buildDebugRequestSnapshot(
+    'POST',
+    '/v1/messages?beta=true',
+    {
+      authorization: 'Bearer secret-auth',
+      'x-api-key': 'secret-key',
+      'proxy-authorization': 'Bearer secret-proxy',
+      'x-app': 'cli',
+    },
+    123,
+  )
+
+  assert.equal(snapshot.method, 'POST')
+  assert.equal(snapshot.path, '/v1/messages?beta=true')
+  assert.equal(snapshot.body_bytes, 123)
+  assert.equal(snapshot.headers.authorization, 'Bearer ***')
+  assert.equal(snapshot.headers['x-api-key'], '***')
+  assert.equal(snapshot.headers['proxy-authorization'], 'Bearer ***')
+  assert.equal(snapshot.headers['x-app'], 'cli')
 })
 
 // ============================================================

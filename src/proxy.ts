@@ -105,6 +105,13 @@ async function handleRequest(
   }
   let body = Buffer.concat(chunks)
 
+  log('debug', 'Inbound request', buildDebugRequestSnapshot(
+    method,
+    path,
+    req.headers as Record<string, string | string[] | undefined>,
+    body.length,
+  ))
+
   // Rewrite identity fields in body
   if (body.length > 0) {
     try {
@@ -122,6 +129,12 @@ async function handleRequest(
 
   // Inject the real OAuth token (replaces whatever the client sent)
   rewrittenHeaders['authorization'] = `Bearer ${oauthToken}`
+  log('debug', 'Outbound request', buildDebugRequestSnapshot(
+    method,
+    path,
+    rewrittenHeaders,
+    body.length,
+  ))
 
   // Forward to upstream
   const upstreamUrl = new URL(path, upstream)
@@ -166,6 +179,40 @@ async function handleRequest(
 
   proxyReq.write(body)
   proxyReq.end()
+}
+
+export function buildDebugRequestSnapshot(
+  method: string,
+  path: string,
+  headers: Record<string, string | string[] | undefined>,
+  bodyBytes: number,
+) {
+  const normalized: Record<string, string> = {}
+
+  for (const [key, value] of Object.entries(headers)) {
+    if (!value) continue
+    const headerValue = Array.isArray(value) ? value.join(', ') : value
+    normalized[key.toLowerCase()] = redactHeaderValue(key, headerValue)
+  }
+
+  return {
+    method,
+    path,
+    body_bytes: bodyBytes,
+    headers: normalized,
+  }
+}
+
+function redactHeaderValue(key: string, value: string): string {
+  const lower = key.toLowerCase()
+  if (lower === 'authorization' || lower === 'proxy-authorization') {
+    const match = value.match(/^Bearer\s+(.+)$/i)
+    return match ? 'Bearer ***' : '***'
+  }
+  if (lower === 'x-api-key') {
+    return '***'
+  }
+  return value
 }
 
 /**
