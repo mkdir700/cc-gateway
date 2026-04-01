@@ -1,6 +1,7 @@
 import { rewriteBody, rewriteHeaders } from '../src/rewriter.js'
 import type { Config } from '../src/config.js'
 import { strict as assert } from 'assert'
+import { authenticate, initAuth } from '../src/auth.js'
 
 const config: Config = {
   server: { port: 8443, tls: { cert: '', key: '' } },
@@ -42,6 +43,8 @@ const config: Config = {
   },
   logging: { level: 'error', audit: false },
 }
+
+initAuth(config)
 
 let passed = 0
 let failed = 0
@@ -244,6 +247,20 @@ test('rewrites process metrics (base64 encoded)', () => {
 console.log('\nHTTP header rewriting')
 // ============================================================
 
+test('accepts x-api-key for gateway authentication', () => {
+  const clientName = authenticate({
+    headers: { 'x-api-key': 'test-token' },
+  } as never)
+  assert.equal(clientName, 'test')
+})
+
+test('accepts raw authorization token for gateway authentication', () => {
+  const clientName = authenticate({
+    headers: { authorization: 'test-token' },
+  } as never)
+  assert.equal(clientName, 'test')
+})
+
 test('rewrites User-Agent to canonical version', () => {
   const headers = rewriteHeaders(
     { 'user-agent': 'claude-code/2.0.50 (external, cli)', 'x-app': 'cli' },
@@ -267,6 +284,15 @@ test('strips proxy-authorization header', () => {
     config,
   )
   assert.equal(headers['proxy-authorization'], undefined)
+})
+
+test('strips x-api-key header', () => {
+  const headers = rewriteHeaders(
+    { 'x-api-key': 'client-api-key', 'x-app': 'cli' },
+    config,
+  )
+  assert.equal(headers['x-api-key'], undefined)
+  assert.equal(headers['x-app'], 'cli')
 })
 
 // ============================================================

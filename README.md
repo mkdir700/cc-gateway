@@ -93,7 +93,7 @@ docker-compose up -d
 curl http://localhost:8443/_health
 
 # Rewrite verification (shows before/after diff)
-curl -H "Authorization: Bearer <your-token>" http://localhost:8443/_verify
+curl -H "Authorization: <your-token>" http://localhost:8443/_verify
 ```
 
 ## Client Setup
@@ -107,12 +107,21 @@ export ANTHROPIC_BASE_URL="https://gateway.your-domain.com:8443"
 # Disable side-channel telemetry (Datadog, GrowthBook, version checks)
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 
-# Skip browser OAuth — gateway handles authentication
-export CLAUDE_CODE_OAUTH_TOKEN="gateway-managed"
-
-# Authenticate to the gateway
-export ANTHROPIC_CUSTOM_HEADERS="Proxy-Authorization: Bearer YOUR_TOKEN"
+# Authenticate to the gateway using Claude Code's native gateway auth path
+export ANTHROPIC_AUTH_TOKEN="YOUR_TOKEN"
 ```
+
+CC Gateway now accepts the client token in any of these headers and strips them before forwarding upstream:
+
+- `Authorization: YOUR_TOKEN` or `Authorization: Bearer YOUR_TOKEN`
+- `Proxy-Authorization: YOUR_TOKEN` or `Proxy-Authorization: Bearer YOUR_TOKEN`
+- `X-Api-Key: YOUR_TOKEN`
+
+That means it works with:
+
+- `ANTHROPIC_AUTH_TOKEN`
+- `ANTHROPIC_API_KEY`
+- `apiKeyHelper`-based gateway setups that emit `Authorization` / `X-Api-Key`
 
 Or run the interactive setup script:
 
@@ -120,7 +129,7 @@ Or run the interactive setup script:
 bash scripts/client-setup.sh
 ```
 
-Then start Claude Code normally — `claude` — no login prompt, traffic routes through the gateway automatically.
+Then start Claude Code normally. If you previously saw `/login` fail with `401 OAuth authentication is currently not supported`, remove the old `CLAUDE_CODE_OAUTH_TOKEN` workaround and use one of the token-based gateway auth methods above instead.
 
 ## What Gets Rewritten
 
@@ -132,7 +141,7 @@ Then start Claude Code normally — `claude` — no login prompt, traffic routes
 | **Process** | `constrainedMemory` (physical RAM) | → canonical value |
 | | `rss`, `heapTotal`, `heapUsed` | → randomized in realistic range |
 | **Headers** | `User-Agent` | → canonical CC version |
-| | `Authorization` | → real OAuth token (injected by gateway) |
+| | `Authorization` / `Proxy-Authorization` / `X-Api-Key` | → stripped client credential, replaced with gateway-managed OAuth token |
 | | `x-anthropic-billing-header` | → canonical fingerprint |
 | **Prompt text** | `Platform`, `Shell`, `OS Version` | → canonical values |
 | | `Working directory` | → canonical path |
@@ -178,7 +187,7 @@ Client machines                        CC Gateway                    Anthropic
 
 | Layer | Mechanism | What it prevents |
 |-------|-----------|-----------------|
-| Env vars | `ANTHROPIC_BASE_URL` + `DISABLE_NONESSENTIAL` + `OAUTH_TOKEN` | CC voluntarily routes to gateway, disables side channels, skips browser login |
+| Env vars | `ANTHROPIC_BASE_URL` + `DISABLE_NONESSENTIAL` + `ANTHROPIC_AUTH_TOKEN` | CC voluntarily routes to gateway, disables side channels, and uses token-based gateway auth |
 | Clash | Domain-based REJECT rules | Any accidental or future direct connections to Anthropic |
 | Gateway | Body + header + prompt rewriting | All 40+ fingerprint dimensions normalized to one device |
 
@@ -210,5 +219,5 @@ This project builds on:
 [license-url]: https://github.com/motiful/cc-gateway/blob/main/LICENSE
 [version-shield]: https://img.shields.io/badge/version-0.1.0--alpha-blue
 [version-url]: https://github.com/motiful/cc-gateway/releases
-[tests-shield]: https://img.shields.io/badge/tests-13%20passed-brightgreen
+[tests-shield]: https://img.shields.io/badge/tests-16%20passed-brightgreen
 [tests-url]: https://github.com/motiful/cc-gateway/blob/main/tests/rewriter.test.ts

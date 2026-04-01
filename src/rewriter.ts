@@ -281,7 +281,7 @@ export function rewriteHeaders(
     const lower = key.toLowerCase()
 
     // Skip hop-by-hop headers and auth (gateway injects the real OAuth token)
-    if (['host', 'connection', 'proxy-authorization', 'proxy-connection', 'transfer-encoding', 'authorization'].includes(lower)) {
+    if (['host', 'connection', 'proxy-authorization', 'proxy-connection', 'transfer-encoding', 'authorization', 'x-api-key'].includes(lower)) {
       continue
     }
 
