@@ -2,7 +2,8 @@ import { rewriteBody, rewriteHeaders } from '../src/rewriter.js'
 import type { Config } from '../src/config.js'
 import { strict as assert } from 'assert'
 import { authenticate, generateGatewayToken, initAuth } from '../src/auth.js'
-import { buildDebugRequestSnapshot, buildUpstreamHeaders } from '../src/proxy.js'
+import { buildDebugRequestSnapshot, buildRewriteDiffLogEntry, buildUpstreamHeaders } from '../src/proxy.js'
+import { enqueueDebugLog, setLogLevel } from '../src/logger.js'
 
 const config: Config = {
   server: { port: 8443, tls: { cert: '', key: '' } },
@@ -354,6 +355,77 @@ test('builds upstream headers with oauth beta and corrected content-length', () 
   assert.equal(headers['content-length'], '110921')
   assert.ok(headers['anthropic-beta'].includes('oauth-2025-04-20'))
   assert.equal(headers['user-agent'], 'claude-cli/2.1.81 (external, cli)')
+})
+
+test('builds diff-only rewrite log entry', () => {
+  const entry = buildRewriteDiffLogEntry(
+    'POST',
+    '/v1/messages?beta=true',
+    {
+      authorization: 'Bearer client-token',
+      'x-stainless-os': 'Linux',
+      'x-app': 'cli',
+    },
+    {
+      authorization: 'Bearer oauth-token',
+      'x-stainless-os': 'Darwin',
+      'x-app': 'cli',
+      'anthropic-beta': 'claude-code-20250219,oauth-2025-04-20',
+    },
+    Buffer.from(JSON.stringify({
+      metadata: {
+        user_id: JSON.stringify({
+          device_id: 'real-device',
+          account_uuid: 'acct-1',
+        }),
+      },
+    })),
+    Buffer.from(JSON.stringify({
+      metadata: {
+        user_id: JSON.stringify({
+          device_id: 'canonical-device',
+          account_uuid: 'acct-1',
+        }),
+      },
+    })),
+  )
+
+  assert.equal(entry.method, 'POST')
+  assert.equal(entry.path, '/v1/messages?beta=true')
+  assert.deepEqual(entry.headers_changed, {
+    'x-stainless-os': { before: 'Linux', after: 'Darwin' },
+    'anthropic-beta': { before: undefined, after: 'claude-code-20250219,oauth-2025-04-20' },
+  })
+  assert.deepEqual(entry.body_changed, {
+    'metadata.user_id.device_id': {
+      before: 'real-device',
+      after: 'canonical-device',
+    },
+  })
+})
+
+test('queues debug logs asynchronously through the scheduler', async () => {
+  setLogLevel('debug')
+
+  const scheduled: Array<() => void> = []
+  const written: Array<{ level: string, message: string, extra?: Record<string, unknown> }> = []
+
+  enqueueDebugLog(
+    'Rewrite diff',
+    { path: '/v1/messages' },
+    (task) => { scheduled.push(task) },
+    (level, message, extra) => { written.push({ level, message, extra }) },
+  )
+
+  assert.equal(scheduled.length, 1)
+  assert.equal(written.length, 0, 'log should not be written synchronously')
+
+  scheduled[0]()
+
+  assert.equal(written.length, 1)
+  assert.equal(written[0].level, 'debug')
+  assert.equal(written[0].message, 'Rewrite diff')
+  assert.deepEqual(written[0].extra, { path: '/v1/messages' })
 })
 
 // ============================================================
