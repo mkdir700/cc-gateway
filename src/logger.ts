@@ -1,4 +1,7 @@
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
+type LogExtra = Record<string, unknown>
+type LogWriter = (level: LogLevel, message: string, extra?: LogExtra) => void
+type LogScheduler = (task: () => void) => void
 
 const LEVEL_ORDER: Record<LogLevel, number> = {
   debug: 0,
@@ -13,8 +16,12 @@ export function setLogLevel(level: LogLevel) {
   currentLevel = level
 }
 
-export function log(level: LogLevel, message: string, extra?: Record<string, unknown>) {
-  if (LEVEL_ORDER[level] < LEVEL_ORDER[currentLevel]) return
+export function shouldLog(level: LogLevel): boolean {
+  return LEVEL_ORDER[level] >= LEVEL_ORDER[currentLevel]
+}
+
+export function log(level: LogLevel, message: string, extra?: LogExtra) {
+  if (!shouldLog(level)) return
 
   const ts = new Date().toISOString()
   const prefix = `[${ts}] [${level.toUpperCase().padEnd(5)}]`
@@ -29,4 +36,14 @@ export function log(level: LogLevel, message: string, extra?: Record<string, unk
 export function audit(clientName: string, method: string, path: string, status: number) {
   const ts = new Date().toISOString()
   console.log(`[${ts}] [AUDIT] client=${clientName} ${method} ${path} → ${status}`)
+}
+
+export function enqueueDebugLog(
+  message: string,
+  extra?: LogExtra,
+  scheduler: LogScheduler = (task) => { setImmediate(task) },
+  writer: LogWriter = log,
+) {
+  if (!shouldLog('debug')) return
+  scheduler(() => writer('debug', message, extra))
 }

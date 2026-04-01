@@ -7,7 +7,7 @@ import type { Config } from './config.js'
 import { authenticate, initAuth } from './auth.js'
 import { getAccessToken } from './oauth.js'
 import { rewriteBody, rewriteHeaders } from './rewriter.js'
-import { audit, log } from './logger.js'
+import { audit, enqueueDebugLog, log } from './logger.js'
 
 export function startProxy(config: Config) {
   initAuth(config)
@@ -104,6 +104,7 @@ async function handleRequest(
     chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
   }
   let body = Buffer.concat(chunks)
+  const originalBody = body
 
   log('debug', 'Inbound request', buildDebugRequestSnapshot(
     method,
@@ -141,6 +142,18 @@ async function handleRequest(
     upstreamHeaders,
     body.length,
   ))
+
+  enqueueDebugLog(
+    'Rewrite diff',
+    buildRewriteDiffLogEntry(
+      method,
+      path,
+      req.headers as Record<string, string | string[] | undefined>,
+      upstreamHeaders,
+      originalBody,
+      body,
+    ),
+  )
 
   // Forward to upstream
   const upstreamUrl = new URL(path, upstream)
@@ -228,6 +241,22 @@ export function buildUpstreamHeaders(
   return upstreamHeaders
 }
 
+export function buildRewriteDiffLogEntry(
+  method: string,
+  path: string,
+  beforeHeaders: Record<string, string | string[] | undefined>,
+  afterHeaders: Record<string, string | string[] | undefined>,
+  beforeBody: Buffer,
+  afterBody: Buffer,
+) {
+  return {
+    method,
+    path,
+    headers_changed: diffHeaderSnapshots(beforeHeaders, afterHeaders),
+    body_changed: diffBodies(beforeBody, afterBody),
+  }
+}
+
 function redactHeaderValue(key: string, value: string): string {
   const lower = key.toLowerCase()
   if (lower === 'authorization' || lower === 'proxy-authorization') {
@@ -253,6 +282,129 @@ function ensureBetaFlag(existing: string | undefined, required: string): string 
   }
 
   return flags.join(',')
+}
+
+function diffHeaderSnapshots(
+  beforeHeaders: Record<string, string | string[] | undefined>,
+  afterHeaders: Record<string, string | string[] | undefined>,
+): Record<string, { before?: string, after?: string }> {
+  const before = buildDebugRequestSnapshot('IN', '', beforeHeaders, 0).headers
+  const after = buildDebugRequestSnapshot('OUT', '', afterHeaders, 0).headers
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)])
+  const changed: Record<string, { before?: string, after?: string }> = {}
+
+  for (const key of keys) {
+    if (before[key] === after[key]) continue
+    changed[key] = {
+      before: before[key],
+      after: after[key],
+    }
+  }
+
+  return changed
+}
+
+function diffBodies(
+  beforeBody: Buffer,
+  afterBody: Buffer,
+): Record<string, { before: unknown, after: unknown }> {
+  if (beforeBody.equals(afterBody)) return {}
+
+  const before = parseBodyForDiff(beforeBody)
+  const after = parseBodyForDiff(afterBody)
+  if (before === undefined || after === undefined) {
+    return {
+      body: {
+        before: summarizeScalar(beforeBody.toString('utf-8')),
+        after: summarizeScalar(afterBody.toString('utf-8')),
+      },
+    }
+  }
+
+  const changed: Record<string, { before: unknown, after: unknown }> = {}
+  collectChangedFields(before, after, '', changed)
+  return changed
+}
+
+function parseBodyForDiff(body: Buffer): unknown {
+  try {
+    return normalizeBodyForDiff(JSON.parse(body.toString('utf-8')))
+  } catch {
+    return undefined
+  }
+}
+
+function normalizeBodyForDiff(value: unknown, key?: string): unknown {
+  if (typeof value === 'string') {
+    if (key === 'user_id') {
+      try {
+        return normalizeBodyForDiff(JSON.parse(value))
+      } catch {
+        return summarizeScalar(value)
+      }
+    }
+    return summarizeScalar(value)
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeBodyForDiff(item))
+  }
+
+  if (value && typeof value === 'object') {
+    const normalized: Record<string, unknown> = {}
+    for (const [entryKey, entryValue] of Object.entries(value)) {
+      normalized[entryKey] = normalizeBodyForDiff(entryValue, entryKey)
+    }
+    return normalized
+  }
+
+  return value
+}
+
+function collectChangedFields(
+  before: unknown,
+  after: unknown,
+  path: string,
+  changed: Record<string, { before: unknown, after: unknown }>,
+) {
+  if (deepEqual(before, after)) return
+
+  if (isPlainObject(before) && isPlainObject(after)) {
+    const keys = new Set([...Object.keys(before), ...Object.keys(after)])
+    for (const key of keys) {
+      const nextPath = path ? `${path}.${key}` : key
+      collectChangedFields(before[key], after[key], nextPath, changed)
+    }
+    return
+  }
+
+  if (Array.isArray(before) && Array.isArray(after)) {
+    const maxLength = Math.max(before.length, after.length)
+    for (let index = 0; index < maxLength; index++) {
+      const nextPath = `${path}[${index}]`
+      collectChangedFields(before[index], after[index], nextPath, changed)
+    }
+    return
+  }
+
+  changed[path || 'body'] = {
+    before: summarizeScalar(before),
+    after: summarizeScalar(after),
+  }
+}
+
+function deepEqual(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function summarizeScalar(value: unknown): unknown {
+  if (typeof value !== 'string') return value
+  if (value.length <= 160) return value
+  return `${value.slice(0, 157)}...`
 }
 
 /**
