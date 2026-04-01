@@ -176,21 +176,23 @@ rules:
 
 ## 架构
 
-```
-客户端机器                           CC Shield                     Anthropic
-┌────────────┐                    ┌──────────────────┐
-│  Claude Code │── ANTHROPIC_ ────│  Auth: Bearer     │
-│  + 环境变量  │   BASE_URL       │  OAuth: 自动      │
-│  + Clash     │                  │    刷新           │──── 单一 ────▶ api.anthropic.com
-│  （阻断      │                  │  Rewrite: 全部    │     身份
-│   直连）     │                  │    身份字段       │
-└────────────┘                    │  Stream: SSE      │
-                                  │    直通           │
-                                  └──────────────────┘
-                                         │
-                                   platform.claude.com
-                                   （仅 Token 刷新，
-                                    从网关 IP 发起）
+```mermaid
+flowchart LR
+    subgraph clients["客户端机器"]
+        CC["Claude Code\n+ 环境变量\n+ Clash\n（阻断直连）"]
+    end
+
+    subgraph shield["CC Shield"]
+        AUTH["Auth: Bearer"]
+        OAUTH["OAuth: 自动刷新"]
+        REWRITE["Rewrite: 全部身份字段"]
+        STREAM["Stream: SSE 直通"]
+    end
+
+    CC -->|"ANTHROPIC_BASE_URL"| AUTH
+
+    shield -->|"单一身份"| API["api.anthropic.com"]
+    OAUTH <-->|"仅 Token 刷新\n从网关 IP 发起"| PLATFORM["platform.claude.com"]
 ```
 
 **纵深防御：**

@@ -176,21 +176,23 @@ See [`clash-rules.yaml`](clash-rules.yaml) for the full template.
 
 ## Architecture
 
-```
-Client machines                        CC Shield                     Anthropic
-┌────────────┐                    ┌──────────────────┐
-│  Claude Code │── ANTHROPIC_ ────│  Auth: Bearer     │
-│  + env vars  │   BASE_URL       │  OAuth: auto-     │
-│  + Clash     │                  │    refresh        │──── single ────▶ api.anthropic.com
-│  (blocks     │                  │  Rewrite: all     │     identity
-│   direct)    │                  │    identity       │
-└────────────┘                    │  Stream: SSE      │
-                                  │    passthrough    │
-                                  └──────────────────┘
-                                         │
-                                   platform.claude.com
-                                   (token refresh only,
-                                    from gateway IP)
+```mermaid
+flowchart LR
+    subgraph clients["Client machines"]
+        CC["Claude Code\n+ env vars\n+ Clash\n(blocks direct)"]
+    end
+
+    subgraph shield["CC Shield"]
+        AUTH["Auth: Bearer"]
+        OAUTH["OAuth: auto-refresh"]
+        REWRITE["Rewrite: all identity"]
+        STREAM["Stream: SSE passthrough"]
+    end
+
+    CC -->|"ANTHROPIC_BASE_URL"| AUTH
+
+    shield -->|"single identity"| API["api.anthropic.com"]
+    OAUTH <-->|"token refresh only\nfrom gateway IP"| PLATFORM["platform.claude.com"]
 ```
 
 **Defense in depth:**
