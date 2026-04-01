@@ -16,7 +16,16 @@ export function startProxy(config: Config) {
   const useTls = config.server.tls?.cert && config.server.tls?.key
 
   const handler = (req: IncomingMessage, res: ServerResponse) => {
-    handleRequest(req, res, config, upstream)
+    req.on('error', () => {})
+    res.on('error', () => {})
+    handleRequest(req, res, config, upstream).catch(err => {
+      if (err.code === 'ECONNRESET' || err.code === 'EPIPE') return
+      log('error', `Unhandled request error: ${err}`)
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Internal server error' }))
+      }
+    })
   }
 
   let server
@@ -100,8 +109,16 @@ async function handleRequest(
 
   // Collect request body
   const chunks: Buffer[] = []
-  for await (const chunk of req) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+  try {
+    for await (const chunk of req) {
+      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+    }
+  } catch (err) {
+    if (!res.headersSent) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Request aborted' }))
+    }
+    return
   }
   let body = Buffer.concat(chunks)
   const originalBody = body
@@ -163,6 +180,7 @@ async function handleRequest(
     {
       method,
       headers: upstreamHeaders,
+      timeout: 30000,
     },
     (proxyRes) => {
       const status = proxyRes.statusCode || 502
@@ -172,6 +190,8 @@ async function handleRequest(
 
       res.writeHead(status, responseHeaders)
 
+      proxyRes.on('error', () => res.destroy())
+
       // Stream response directly (SSE for Claude responses)
       proxyRes.pipe(res)
 
@@ -180,6 +200,17 @@ async function handleRequest(
       }
     },
   )
+
+  proxyReq.on('timeout', () => {
+    proxyReq.destroy()
+    if (!res.headersSent) {
+      res.writeHead(504, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Gateway timeout' }))
+    }
+    if (config.logging.audit) {
+      audit(clientName, method, path, 504)
+    }
+  })
 
   proxyReq.on('error', (err) => {
     log('error', `Upstream error: ${err.message}`)
