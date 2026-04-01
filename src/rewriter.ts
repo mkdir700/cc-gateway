@@ -96,7 +96,7 @@ function rewritePromptText(text: string, config: Config): string {
   // 1. Billing header fingerprint
   result = result.replace(
     /cc_version=[\d.]+\.[a-f0-9]{3}/g,
-    `cc_version=${config.env.version}.${config.env.version_hash || '000'}`,
+    `cc_version=${config.env.version}.${config.env.version_hash || 'a1b'}`,
   )
 
   // 2. <env> block format (older prompt format):
@@ -296,7 +296,7 @@ export function rewriteHeaders(
     } else if (lower === 'x-stainless-package-version') {
       out[key] = String(config.env.stainless_sdk_version || config.env.version_base || config.env.version)
     } else if (lower === 'x-anthropic-billing-header') {
-      out[key] = v.replace(/cc_version=[\d.]+\.[a-f0-9]{3}/g, `cc_version=${config.env.version}.${config.env.version_hash || '000'}`)
+      out[key] = v.replace(/cc_version=[\d.]+\.[a-f0-9]{3}/g, `cc_version=${config.env.version}.${config.env.version_hash || 'a1b'}`)
     } else {
       out[key] = v
     }

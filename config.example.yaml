@@ -59,8 +59,8 @@ env:
   stainless_sdk_version: "0.74.0"
   # Last 3 hex chars of the git commit hash for this CLI release.
   # Find it from a real client's x-anthropic-billing-header: cc_version=2.1.81.<hash>
-  # Or leave blank to use "000" (less realistic).
-  version_hash: "000"
+  # Or leave blank to use "a1b" (less realistic).
+  version_hash: "a1b"
   build_time: "2026-03-20T21:26:18Z"
   deployment_environment: unknown-darwin
   vcs: git
