@@ -2,10 +2,10 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/logo-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset=".github/logo-light.svg">
-    <img alt="CC Gateway" src=".github/logo-light.svg" width="440">
+    <img alt="CC Shield" src=".github/logo-light.svg" width="440">
   </picture>
 
-  <p>Take back control of your AI API telemetry</p>
+  <p>Claude Code gateway for token auth, fingerprint normalization, and telemetry risk reduction</p>
 </div>
 
 <div align="center">
@@ -21,9 +21,17 @@
   <a href="#client-setup">Client Setup</a> &middot;
   <a href="#what-gets-rewritten">What Gets Rewritten</a> &middot;
   <a href="#clash-rules">Clash Rules</a>
+  &nbsp;|&nbsp;
+  <a href="README.zh.md">中文</a>
 </div>
 
 ---
+
+# CC Shield
+
+CC Shield is a maintained fork focused on running Claude Code through a controlled gateway with token-based client auth, canonical machine fingerprinting, and low-noise diff logging for update detection.
+
+Based on the original [motiful/cc-gateway](https://github.com/motiful/cc-gateway), with additional work around Claude Code compatibility, spoofing policy, and operational debugging.
 
 > **Alpha** — This project is under active development. Test with a non-primary account first.
 
@@ -35,7 +43,7 @@ Claude Code collects **640+ telemetry event types** across 3 parallel channels, 
 
 If you run Claude Code on multiple machines, each device gets a unique permanent identifier. There is no built-in way to manage how your identity is presented to the API.
 
-CC Gateway is a reverse proxy that sits between Claude Code and the Anthropic API. It normalizes device identity, environment fingerprints, and process metrics to a single canonical profile — giving you control over what telemetry leaves your network.
+CC Shield is a reverse proxy that sits between Claude Code and the Anthropic API. It normalizes device identity, environment fingerprints, and process metrics to a single canonical profile, giving you tighter control over what telemetry leaves your network.
 
 ## Features
 
@@ -43,7 +51,7 @@ CC Gateway is a reverse proxy that sits between Claude Code and the Anthropic AP
 - **40+ environment dimensions replaced** — platform, architecture, Node.js version, terminal, package managers, runtimes, CI flags, deployment environment — the entire `env` object is swapped, not patched
 - **System prompt sanitization** — the `<env>` block injected into every prompt (Platform, Shell, OS Version, working directory) is rewritten to match the canonical profile, preventing cross-reference detection between telemetry and prompt content
 - **Process metrics normalization** — physical RAM (`constrainedMemory`), heap size, and RSS are masked to canonical values so hardware differences don't leak
-- **Centralized OAuth** — the gateway manages token refresh internally; client machines never contact `platform.claude.com` and never need a browser login
+- **Centralized OAuth** — the shield manages token refresh internally; client machines never contact `platform.claude.com` and never need a browser login
 - **Telemetry leak prevention** — strips `baseUrl` and `gateway` fields that would reveal proxy usage in analytics events
 - **Three-layer defense architecture** — env vars (voluntary routing) + Clash rules (network-level blocking) + gateway rewriting (identity normalization)
 
@@ -52,8 +60,8 @@ CC Gateway is a reverse proxy that sits between Claude Code and the Anthropic AP
 ### 1. Install and configure
 
 ```bash
-git clone https://github.com/motiful/cc-gateway.git
-cd cc-gateway
+git clone https://github.com/mkdir700/cc-shield.git
+cd cc-shield
 npm install
 
 # Generate canonical identity
@@ -73,7 +81,7 @@ bash scripts/extract-token.sh
 # Copies refresh_token from macOS Keychain → paste into config.yaml
 ```
 
-### 3. Start the gateway
+### 3. Start the shield
 
 ```bash
 # Development (no TLS)
@@ -101,17 +109,17 @@ curl -H "Authorization: <your-token>" http://localhost:8443/_verify
 Add these environment variables on each client machine. No browser login needed.
 
 ```bash
-# Route all Claude Code traffic through the gateway
+# Route all Claude Code traffic through the shield
 export ANTHROPIC_BASE_URL="https://gateway.your-domain.com:8443"
 
 # Disable side-channel telemetry (Datadog, GrowthBook, version checks)
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 
-# Authenticate to the gateway using Claude Code's native gateway auth path
+# Authenticate to the shield using Claude Code's native gateway auth path
 export ANTHROPIC_AUTH_TOKEN="YOUR_TOKEN"
 ```
 
-CC Gateway now accepts the client token in any of these headers and strips them before forwarding upstream:
+CC Shield now accepts the client token in any of these headers and strips them before forwarding upstream:
 
 - `Authorization: YOUR_TOKEN` or `Authorization: Bearer YOUR_TOKEN`
 - `Proxy-Authorization: YOUR_TOKEN` or `Proxy-Authorization: Bearer YOUR_TOKEN`
@@ -128,6 +136,8 @@ Or run the interactive setup script:
 ```bash
 bash scripts/client-setup.sh
 ```
+
+Alternatively, use **[cc-switch](https://github.com/farion1231/cc-switch)** — a desktop app that manages Claude Code provider configuration through a GUI. You can add CC Shield as a custom provider and switch to it in one click, without editing environment variables manually.
 
 Then start Claude Code normally. If you previously saw `/login` fail with `401 OAuth authentication is currently not supported`, remove the old `CLAUDE_CODE_OAUTH_TOKEN` workaround and use one of the token-based gateway auth methods above instead.
 
@@ -167,7 +177,7 @@ See [`clash-rules.yaml`](clash-rules.yaml) for the full template.
 ## Architecture
 
 ```
-Client machines                        CC Gateway                    Anthropic
+Client machines                        CC Shield                     Anthropic
 ┌────────────┐                    ┌──────────────────┐
 │  Claude Code │── ANTHROPIC_ ────│  Auth: Bearer     │
 │  + env vars  │   BASE_URL       │  OAuth: auto-     │
@@ -187,7 +197,7 @@ Client machines                        CC Gateway                    Anthropic
 
 | Layer | Mechanism | What it prevents |
 |-------|-----------|-----------------|
-| Env vars | `ANTHROPIC_BASE_URL` + `DISABLE_NONESSENTIAL` + `ANTHROPIC_AUTH_TOKEN` | CC voluntarily routes to gateway, disables side channels, and uses token-based gateway auth |
+| Env vars | `ANTHROPIC_BASE_URL` + `DISABLE_NONESSENTIAL` + `ANTHROPIC_AUTH_TOKEN` | CC voluntarily routes to the shield, disables side channels, and uses token-based shield auth |
 | Clash | Domain-based REJECT rules | Any accidental or future direct connections to Anthropic |
 | Gateway | Body + header + prompt rewriting | All 40+ fingerprint dimensions normalized to one device |
 
@@ -215,9 +225,9 @@ This project builds on:
 </div>
 
 <!-- Badge references -->
-[license-shield]: https://img.shields.io/github/license/motiful/cc-gateway
-[license-url]: https://github.com/motiful/cc-gateway/blob/main/LICENSE
+[license-shield]: https://img.shields.io/github/license/mkdir700/cc-shield
+[license-url]: https://github.com/mkdir700/cc-shield/blob/main/LICENSE
 [version-shield]: https://img.shields.io/badge/version-0.1.0--alpha-blue
-[version-url]: https://github.com/motiful/cc-gateway/releases
+[version-url]: https://github.com/mkdir700/cc-shield/releases
 [tests-shield]: https://img.shields.io/badge/tests-16%20passed-brightgreen
-[tests-url]: https://github.com/motiful/cc-gateway/blob/main/tests/rewriter.test.ts
+[tests-url]: https://github.com/mkdir700/cc-shield/blob/main/tests/rewriter.test.ts
