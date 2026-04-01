@@ -105,6 +105,13 @@ async function handleRequest(
   }
   let body = Buffer.concat(chunks)
 
+  log('debug', 'Inbound request', buildDebugRequestSnapshot(
+    method,
+    path,
+    req.headers as Record<string, string | string[] | undefined>,
+    body.length,
+  ))
+
   // Rewrite identity fields in body
   if (body.length > 0) {
     try {
@@ -120,8 +127,20 @@ async function handleRequest(
     config,
   )
 
-  // Inject the real OAuth token (replaces whatever the client sent)
-  rewrittenHeaders['authorization'] = `Bearer ${oauthToken}`
+  const upstreamHeaders = buildUpstreamHeaders(
+    rewrittenHeaders,
+    config,
+    oauthToken,
+    body.length,
+    upstream.host,
+  )
+
+  log('debug', 'Outbound request', buildDebugRequestSnapshot(
+    method,
+    path,
+    upstreamHeaders,
+    body.length,
+  ))
 
   // Forward to upstream
   const upstreamUrl = new URL(path, upstream)
@@ -130,11 +149,7 @@ async function handleRequest(
     upstreamUrl,
     {
       method,
-      headers: {
-        ...rewrittenHeaders,
-        host: upstream.host,
-        'content-length': String(body.length),
-      },
+      headers: upstreamHeaders,
     },
     (proxyRes) => {
       const status = proxyRes.statusCode || 502
@@ -166,6 +181,78 @@ async function handleRequest(
 
   proxyReq.write(body)
   proxyReq.end()
+}
+
+export function buildDebugRequestSnapshot(
+  method: string,
+  path: string,
+  headers: Record<string, string | string[] | undefined>,
+  bodyBytes: number,
+) {
+  const normalized: Record<string, string> = {}
+
+  for (const [key, value] of Object.entries(headers)) {
+    if (!value) continue
+    const headerValue = Array.isArray(value) ? value.join(', ') : value
+    normalized[key.toLowerCase()] = redactHeaderValue(key, headerValue)
+  }
+
+  return {
+    method,
+    path,
+    body_bytes: bodyBytes,
+    headers: normalized,
+  }
+}
+
+export function buildUpstreamHeaders(
+  headers: Record<string, string | string[] | undefined>,
+  config: Config,
+  oauthToken: string,
+  bodyLength: number,
+  upstreamHost: string,
+): Record<string, string> {
+  const rewrittenHeaders = rewriteHeaders(headers, config)
+  const upstreamHeaders: Record<string, string> = {
+    ...rewrittenHeaders,
+    host: upstreamHost,
+    'content-length': String(bodyLength),
+    authorization: `Bearer ${oauthToken}`,
+  }
+
+  upstreamHeaders['anthropic-beta'] = ensureBetaFlag(
+    upstreamHeaders['anthropic-beta'],
+    'oauth-2025-04-20',
+  )
+
+  return upstreamHeaders
+}
+
+function redactHeaderValue(key: string, value: string): string {
+  const lower = key.toLowerCase()
+  if (lower === 'authorization' || lower === 'proxy-authorization') {
+    const match = value.match(/^Bearer\s+(.+)$/i)
+    return match ? 'Bearer ***' : '***'
+  }
+  if (lower === 'x-api-key') {
+    return '***'
+  }
+  return value
+}
+
+function ensureBetaFlag(existing: string | undefined, required: string): string {
+  if (!existing) return required
+
+  const flags = existing
+    .split(',')
+    .map(flag => flag.trim())
+    .filter(Boolean)
+
+  if (!flags.includes(required)) {
+    flags.push(required)
+  }
+
+  return flags.join(',')
 }
 
 /**

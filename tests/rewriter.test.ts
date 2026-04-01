@@ -1,6 +1,8 @@
 import { rewriteBody, rewriteHeaders } from '../src/rewriter.js'
 import type { Config } from '../src/config.js'
 import { strict as assert } from 'assert'
+import { authenticate, generateGatewayToken, initAuth } from '../src/auth.js'
+import { buildDebugRequestSnapshot, buildUpstreamHeaders } from '../src/proxy.js'
 
 const config: Config = {
   server: { port: 8443, tls: { cert: '', key: '' } },
@@ -42,6 +44,8 @@ const config: Config = {
   },
   logging: { level: 'error', audit: false },
 }
+
+initAuth(config)
 
 let passed = 0
 let failed = 0
@@ -244,12 +248,44 @@ test('rewrites process metrics (base64 encoded)', () => {
 console.log('\nHTTP header rewriting')
 // ============================================================
 
-test('rewrites User-Agent to canonical version', () => {
+test('accepts x-api-key for gateway authentication', () => {
+  const clientName = authenticate({
+    headers: { 'x-api-key': 'test-token' },
+  } as never)
+  assert.equal(clientName, 'test')
+})
+
+test('accepts raw authorization token for gateway authentication', () => {
+  const clientName = authenticate({
+    headers: { authorization: 'test-token' },
+  } as never)
+  assert.equal(clientName, 'test')
+})
+
+test('generates gateway tokens in sk- prefixed hex format', () => {
+  const token = generateGatewayToken()
+  assert.match(token, /^sk-[a-f0-9]{64}$/)
+})
+
+test('rewrites client identity headers to canonical machine profile', () => {
   const headers = rewriteHeaders(
-    { 'user-agent': 'claude-code/2.0.50 (external, cli)', 'x-app': 'cli' },
+    {
+      'user-agent': 'claude-cli/2.0.50 (external, cli)',
+      'x-stainless-os': 'Linux',
+      'x-stainless-arch': 'x64',
+      'x-stainless-runtime-version': 'v20.0.0',
+      'x-stainless-package-version': '0.74.0',
+      'x-anthropic-billing-header': 'cc_version=2.0.50.a1b; cc_entrypoint=cli;',
+      'x-app': 'cli',
+    },
     config,
   )
-  assert.equal(headers['user-agent'], 'claude-code/2.1.81 (external, cli)')
+  assert.equal(headers['user-agent'], 'claude-cli/2.1.81 (external, cli)')
+  assert.equal(headers['x-stainless-os'], 'Darwin')
+  assert.equal(headers['x-stainless-arch'], 'arm64')
+  assert.equal(headers['x-stainless-runtime-version'], 'v24.3.0')
+  assert.equal(headers['x-stainless-package-version'], '2.1.81')
+  assert.equal(headers['x-anthropic-billing-header'], 'cc_version=2.1.81.000; cc_entrypoint=cli;')
   assert.equal(headers['x-app'], 'cli')
 })
 
@@ -267,6 +303,57 @@ test('strips proxy-authorization header', () => {
     config,
   )
   assert.equal(headers['proxy-authorization'], undefined)
+})
+
+test('strips x-api-key header', () => {
+  const headers = rewriteHeaders(
+    { 'x-api-key': 'client-api-key', 'x-app': 'cli' },
+    config,
+  )
+  assert.equal(headers['x-api-key'], undefined)
+  assert.equal(headers['x-app'], 'cli')
+})
+
+test('builds redacted debug request snapshot', () => {
+  const snapshot = buildDebugRequestSnapshot(
+    'POST',
+    '/v1/messages?beta=true',
+    {
+      authorization: 'Bearer secret-auth',
+      'x-api-key': 'secret-key',
+      'proxy-authorization': 'Bearer secret-proxy',
+      'x-app': 'cli',
+    },
+    123,
+  )
+
+  assert.equal(snapshot.method, 'POST')
+  assert.equal(snapshot.path, '/v1/messages?beta=true')
+  assert.equal(snapshot.body_bytes, 123)
+  assert.equal(snapshot.headers.authorization, 'Bearer ***')
+  assert.equal(snapshot.headers['x-api-key'], '***')
+  assert.equal(snapshot.headers['proxy-authorization'], 'Bearer ***')
+  assert.equal(snapshot.headers['x-app'], 'cli')
+})
+
+test('builds upstream headers with oauth beta and corrected content-length', () => {
+  const headers = buildUpstreamHeaders(
+    {
+      authorization: 'Bearer client-token',
+      'anthropic-beta': 'claude-code-20250219,interleaved-thinking-2025-05-14',
+      'content-length': '110954',
+      'user-agent': 'claude-cli/2.1.89 (external, cli)',
+    },
+    config,
+    'oauth-access-token',
+    110921,
+    'api.anthropic.com',
+  )
+
+  assert.equal(headers.authorization, 'Bearer oauth-access-token')
+  assert.equal(headers['content-length'], '110921')
+  assert.ok(headers['anthropic-beta'].includes('oauth-2025-04-20'))
+  assert.equal(headers['user-agent'], 'claude-cli/2.1.81 (external, cli)')
 })
 
 // ============================================================

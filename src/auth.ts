@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto'
 import type { IncomingMessage } from 'http'
 import type { Config, TokenEntry } from './config.js'
 
@@ -10,17 +11,33 @@ export function initAuth(config: Config) {
   }
 }
 
+export function generateGatewayToken(): string {
+  return `sk-${randomBytes(32).toString('hex')}`
+}
+
 /**
  * Authenticate incoming request by Bearer token.
  * Returns the token entry name (for audit logging) or null if unauthorized.
  */
 export function authenticate(req: IncomingMessage): string | null {
-  const authHeader = req.headers['proxy-authorization'] || req.headers['authorization']
-  if (!authHeader || typeof authHeader !== 'string') return null
+  const candidates = [
+    req.headers['x-api-key'],
+    req.headers['proxy-authorization'],
+    req.headers['authorization'],
+  ]
 
-  const match = authHeader.match(/^Bearer\s+(.+)$/i)
-  if (!match) return null
+  for (const header of candidates) {
+    if (typeof header !== 'string') continue
 
-  const entry = tokenMap.get(match[1])
-  return entry?.name ?? null
+    const token = extractToken(header)
+    const entry = tokenMap.get(token)
+    if (entry) return entry.name
+  }
+
+  return null
+}
+
+function extractToken(header: string): string {
+  const match = header.match(/^Bearer\s+(.+)$/i)
+  return match ? match[1] : header.trim()
 }

@@ -9,9 +9,9 @@ echo "=== CC Gateway Client Setup ==="
 echo ""
 
 read -p "Gateway URL (e.g., https://gateway.office.com:8443): " GATEWAY_URL
-read -p "Your bearer token: " BEARER_TOKEN
+read -p "Your gateway token: " GATEWAY_TOKEN
 
-if [[ -z "$GATEWAY_URL" || -z "$BEARER_TOKEN" ]]; then
+if [[ -z "$GATEWAY_URL" || -z "$GATEWAY_TOKEN" ]]; then
   echo "Error: Gateway URL and token are required."
   exit 1
 fi
@@ -31,10 +31,8 @@ ENV_BLOCK="
 export ANTHROPIC_BASE_URL=\"$GATEWAY_URL\"
 # Disable all side-channel telemetry (Datadog, GrowthBook, updates)
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
-# Placeholder token - gateway injects the real OAuth token
-export CLAUDE_CODE_OAUTH_TOKEN=\"gateway-managed\"
-# Gateway proxy auth - your personal access token
-export ANTHROPIC_CUSTOM_HEADERS=\"Proxy-Authorization: Bearer $BEARER_TOKEN\"
+# Gateway auth token - Claude Code sends this natively as Authorization
+export ANTHROPIC_AUTH_TOKEN=\"$GATEWAY_TOKEN\"
 # === End CC Gateway ==="
 
 echo ""
@@ -43,12 +41,12 @@ echo ""
 echo "Environment variables:"
 echo "  ANTHROPIC_BASE_URL=$GATEWAY_URL"
 echo "  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1"
-echo "  CLAUDE_CODE_OAUTH_TOKEN=gateway-managed"
-echo "  ANTHROPIC_CUSTOM_HEADERS=Proxy-Authorization: Bearer <token>"
+echo "  ANTHROPIC_AUTH_TOKEN=<token>"
 echo ""
 echo "Effect:"
 echo "  - All API traffic routes through gateway (no direct Anthropic contact)"
-echo "  - Gateway injects real OAuth token (no browser login needed)"
+echo "  - Claude Code uses token-based gateway auth (no browser login needed)"
+echo "  - Gateway injects the real OAuth token upstream"
 echo "  - Telemetry side-channels disabled"
 echo ""
 
@@ -62,7 +60,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
   echo "Done! Run: source $RC_FILE"
   echo ""
   echo "Then start Claude Code normally: claude"
-  echo "(No login needed - gateway handles auth)"
+  echo "(No /login needed - Claude Code will use ANTHROPIC_AUTH_TOKEN)"
 else
   echo "Aborted."
 fi

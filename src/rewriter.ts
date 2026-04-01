@@ -267,7 +267,7 @@ function randomInRange(min: number, max: number): number {
 }
 
 /**
- * Rewrite HTTP headers to canonical identity.
+ * Preserve client HTTP headers while removing hop-by-hop and client auth headers.
  */
 export function rewriteHeaders(
   headers: Record<string, string | string[] | undefined>,
@@ -281,15 +281,21 @@ export function rewriteHeaders(
     const lower = key.toLowerCase()
 
     // Skip hop-by-hop headers and auth (gateway injects the real OAuth token)
-    if (['host', 'connection', 'proxy-authorization', 'proxy-connection', 'transfer-encoding', 'authorization'].includes(lower)) {
+    if (['host', 'connection', 'proxy-authorization', 'proxy-connection', 'transfer-encoding', 'authorization', 'x-api-key'].includes(lower)) {
       continue
     }
 
     if (lower === 'user-agent') {
-      // Normalize to canonical version
-      out[key] = `claude-code/${config.env.version} (external, cli)`
+      out[key] = `claude-cli/${config.env.version} (external, cli)`
+    } else if (lower === 'x-stainless-os') {
+      out[key] = toStainlessOs(config.env.platform)
+    } else if (lower === 'x-stainless-arch') {
+      out[key] = String(config.env.arch)
+    } else if (lower === 'x-stainless-runtime-version') {
+      out[key] = String(config.env.node_version)
+    } else if (lower === 'x-stainless-package-version') {
+      out[key] = String(config.env.version_base || config.env.version)
     } else if (lower === 'x-anthropic-billing-header') {
-      // Rewrite billing header
       out[key] = v.replace(/cc_version=[\d.]+\.[a-f0-9]{3}/g, `cc_version=${config.env.version}.000`)
     } else {
       out[key] = v
@@ -297,4 +303,13 @@ export function rewriteHeaders(
   }
 
   return out
+}
+
+function toStainlessOs(platform: unknown): string {
+  if (platform === 'darwin') return 'Darwin'
+  if (platform === 'win32') return 'Windows'
+  if (typeof platform === 'string' && platform.length > 0) {
+    return platform.charAt(0).toUpperCase() + platform.slice(1)
+  }
+  return 'Unknown'
 }
