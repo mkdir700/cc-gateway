@@ -127,12 +127,18 @@ async function handleRequest(
     config,
   )
 
-  // Inject the real OAuth token (replaces whatever the client sent)
-  rewrittenHeaders['authorization'] = `Bearer ${oauthToken}`
+  const upstreamHeaders = buildUpstreamHeaders(
+    rewrittenHeaders,
+    config,
+    oauthToken,
+    body.length,
+    upstream.host,
+  )
+
   log('debug', 'Outbound request', buildDebugRequestSnapshot(
     method,
     path,
-    rewrittenHeaders,
+    upstreamHeaders,
     body.length,
   ))
 
@@ -143,11 +149,7 @@ async function handleRequest(
     upstreamUrl,
     {
       method,
-      headers: {
-        ...rewrittenHeaders,
-        host: upstream.host,
-        'content-length': String(body.length),
-      },
+      headers: upstreamHeaders,
     },
     (proxyRes) => {
       const status = proxyRes.statusCode || 502
@@ -203,6 +205,29 @@ export function buildDebugRequestSnapshot(
   }
 }
 
+export function buildUpstreamHeaders(
+  headers: Record<string, string | string[] | undefined>,
+  config: Config,
+  oauthToken: string,
+  bodyLength: number,
+  upstreamHost: string,
+): Record<string, string> {
+  const rewrittenHeaders = rewriteHeaders(headers, config)
+  const upstreamHeaders: Record<string, string> = {
+    ...rewrittenHeaders,
+    host: upstreamHost,
+    'content-length': String(bodyLength),
+    authorization: `Bearer ${oauthToken}`,
+  }
+
+  upstreamHeaders['anthropic-beta'] = ensureBetaFlag(
+    upstreamHeaders['anthropic-beta'],
+    'oauth-2025-04-20',
+  )
+
+  return upstreamHeaders
+}
+
 function redactHeaderValue(key: string, value: string): string {
   const lower = key.toLowerCase()
   if (lower === 'authorization' || lower === 'proxy-authorization') {
@@ -213,6 +238,21 @@ function redactHeaderValue(key: string, value: string): string {
     return '***'
   }
   return value
+}
+
+function ensureBetaFlag(existing: string | undefined, required: string): string {
+  if (!existing) return required
+
+  const flags = existing
+    .split(',')
+    .map(flag => flag.trim())
+    .filter(Boolean)
+
+  if (!flags.includes(required)) {
+    flags.push(required)
+  }
+
+  return flags.join(',')
 }
 
 /**

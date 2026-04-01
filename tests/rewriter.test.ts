@@ -2,7 +2,7 @@ import { rewriteBody, rewriteHeaders } from '../src/rewriter.js'
 import type { Config } from '../src/config.js'
 import { strict as assert } from 'assert'
 import { authenticate, generateGatewayToken, initAuth } from '../src/auth.js'
-import { buildDebugRequestSnapshot } from '../src/proxy.js'
+import { buildDebugRequestSnapshot, buildUpstreamHeaders } from '../src/proxy.js'
 
 const config: Config = {
   server: { port: 8443, tls: { cert: '', key: '' } },
@@ -329,6 +329,26 @@ test('builds redacted debug request snapshot', () => {
   assert.equal(snapshot.headers['x-api-key'], '***')
   assert.equal(snapshot.headers['proxy-authorization'], 'Bearer ***')
   assert.equal(snapshot.headers['x-app'], 'cli')
+})
+
+test('builds upstream headers with oauth beta and corrected content-length', () => {
+  const headers = buildUpstreamHeaders(
+    {
+      authorization: 'Bearer client-token',
+      'anthropic-beta': 'claude-code-20250219,interleaved-thinking-2025-05-14',
+      'content-length': '110954',
+      'user-agent': 'claude-cli/2.1.89 (external, cli)',
+    },
+    config,
+    'oauth-access-token',
+    110921,
+    'api.anthropic.com',
+  )
+
+  assert.equal(headers.authorization, 'Bearer oauth-access-token')
+  assert.equal(headers['content-length'], '110921')
+  assert.ok(headers['anthropic-beta'].includes('oauth-2025-04-20'))
+  assert.equal(headers['user-agent'], 'claude-cli/2.1.89 (external, cli)')
 })
 
 // ============================================================
